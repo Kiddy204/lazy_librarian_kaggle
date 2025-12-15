@@ -1,0 +1,12 @@
+.env
+*.pkl
+*.npz
+*.npy
+*.csv
+*.json
+*.txt
+*.log
+*.err
+*.out
+*.err
+*.out
