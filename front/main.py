@@ -745,18 +745,35 @@ def render_book_card(book: pd.Series, times_borrowed: int = None):
     """, unsafe_allow_html=True)
 
 
-def render_recommendation_card(book: pd.Series, score: float = None):
-    """Render a recommendation card with cover image and fallback support."""
+def render_recommendation_card(book: pd.Series, score: float = None, borrow_count: int = None):
+    """Render a recommendation card with cover image, subjects, and borrow count."""
     # Escape all text content
     title = html.escape(str(book.get('Title', 'Unknown Title')))
     author = html.escape(str(book.get('Author', 'Unknown Author'))) if pd.notna(book.get('Author')) else 'Unknown'
     isbn = book.get('ISBN Valid', '')
     item_id = book.get('i', None)
     
+    # Extract and clean subjects
+    subjects = str(book.get('Subjects', ''))
+    subjects = re.sub(r'<[^>]+>', '', subjects).strip()
+    
     # Get cover URLs for fallback (smaller size for recommendations, with cache)
     cover_urls = get_cover_urls(isbn, size="S", item_id=item_id)
     cover_urls_json = html.escape(json.dumps(cover_urls))
     primary_url = cover_urls[0] if cover_urls else DEFAULT_COVER
+    
+    # Build subject badges
+    subject_badges = ""
+    if pd.notna(subjects) and subjects:
+        subject_list = str(subjects).split(';')[:3]  # Show max 3 subjects
+        for subj in subject_list:
+            escaped_subj = html.escape(subj.strip())
+            subject_badges += f'<span class="badge badge-subject">{escaped_subj}</span> '
+    
+    # Build borrow count badge
+    borrow_badge = ""
+    if borrow_count and borrow_count > 0:
+        borrow_badge = f'<span class="badge badge-count">Borrowed {borrow_count}x</span>'
     
     score_text = ""
     if score:
@@ -787,6 +804,12 @@ def render_recommendation_card(book: pd.Series, score: float = None):
             <div style="flex: 1; min-width: 0;">
                 <h4 style="color: #ffffff; margin: 0; font-size: 1rem;">{display_title}</h4>
                 <p style="color: #e8e8e8; margin: 5px 0 0 0; font-size: 0.9rem;">by {author}</p>
+                <div style="margin-top: 8px;">
+                    {borrow_badge}
+                </div>
+                <div style="margin-top: 5px; overflow: hidden;">
+                    {subject_badges}
+                </div>
                 {score_text}
             </div>
         </div>
@@ -1184,12 +1207,17 @@ def page_user_detail(interactions: pd.DataFrame, items: pd.DataFrame):
         if len(recommendations) == 0:
             st.warning("No recommendations available.")
         else:
+            # Calculate borrow counts for recommended books
+            borrow_counts = interactions.groupby('i').size().reset_index(name='borrow_count')
+            recommendations = recommendations.merge(borrow_counts, on='i', how='left')
+            recommendations['borrow_count'] = recommendations['borrow_count'].fillna(0).astype(int)
+            
             cols = st.columns(2)
             for idx, (_, book) in enumerate(recommendations.iterrows()):
                 with cols[idx % 2]:
                     # Show rank instead of fake score
                     rank = idx + 1
-                    render_recommendation_card(book, score=None)
+                    render_recommendation_card(book, score=None, borrow_count=int(book['borrow_count']))
                     st.markdown(f"<div style='text-align: center; color: #ffd700; font-weight: bold; margin-top: -10px;'>#{rank} Recommendation</div>", unsafe_allow_html=True)
 
 
